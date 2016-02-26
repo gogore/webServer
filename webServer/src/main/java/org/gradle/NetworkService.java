@@ -9,27 +9,32 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class NetworkService extends Thread {
+    private int bufferSize;
+    private Logger logger = LoggerFactory.getLogger(this.getClass());
     private Selector selector = null;
     private ServerSocketChannel serverSocketChannel;
     private boolean runFlag = true;
 
     /**
      * 소켓 생성
+     * @param bufferSize 
      *
      * @throws IOException
      * @throws InterruptedException
      */
-    public NetworkService() throws IOException, InterruptedException {
+    public NetworkService(int port, int bufferSize) throws IOException, InterruptedException {
         serverSocketChannel = ServerSocketChannel.open();
         selector = Selector.open();
         serverSocketChannel.configureBlocking(false);
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
-        serverSocketChannel.socket().bind(new InetSocketAddress(1234));
+        serverSocketChannel.socket().bind(new InetSocketAddress(port));
+        this.bufferSize = bufferSize;
     }
 
     /**
@@ -40,13 +45,16 @@ public class NetworkService extends Thread {
         while (runFlag) {
             try {
                 if (selector.select(1000) != 0) {
-                    Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+                    Set<SelectionKey> selectedKeys = selector.selectedKeys();
+                    Iterator<SelectionKey> iterator = selectedKeys.iterator();
+                    logger.debug(Integer.toString(selectedKeys.size()));
                     while (iterator.hasNext()) {
                         SelectionKey selectionKey = iterator.next();
                         if (selectionKey.isAcceptable()) {
                             accept(selectionKey);
                         } else if (selectionKey.isReadable()) {
                             read(selectionKey);
+                        } else {
                         }
                         iterator.remove();
                     }
@@ -69,7 +77,7 @@ public class NetworkService extends Thread {
         // 받아들인 서버소켓채널로 소켓채널 생성
         SocketChannel sc = server.accept();
         sc.configureBlocking(false);
-        sc.write(ByteBuffer.wrap("allow".getBytes()));
+        sc.write(ByteBuffer.wrap("connected\n".getBytes()));
         // 접속된후에는 읽기 모드로 변경
         sc.register(selector, SelectionKey.OP_READ);
     }
@@ -87,24 +95,24 @@ public class NetworkService extends Thread {
             selectionKey.attach(rawData);
         }
         SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
-        ByteBuffer buffer = ByteBuffer.allocateDirect(100);
+        ByteBuffer buffer = ByteBuffer.allocateDirect(bufferSize);
         try {
             // 전달 받은 내용을 버퍼에 입력한다.
             int read = socketChannel.read(buffer);
-            isEos = (read == -1);
+            isEos = (read < bufferSize);
             if (isEos) {
                 // 여기서 문자열 생성
                 byte[] resultByteArray = (byte[]) selectionKey.attachment();
 
                 String planStr = new String(resultByteArray);
 
-                System.out.println(planStr);
+                socketChannel.write(ByteBuffer.wrap(resultByteArray));
                 selectionKey.cancel();
                 socketChannel.close();
                 this.close();
             } else {
                 buffer.clear();
-                byte[] bytearr = new byte[buffer.remaining()];
+                byte[] bytearr = new byte[bufferSize];
                 int totalSize = rawData.length + bytearr.length;
                 byte[] totalArr = new byte[totalSize];
                 buffer.get(bytearr);
@@ -114,7 +122,7 @@ public class NetworkService extends Thread {
                 selectionKey.attach(totalArr);
             }
         } catch (Exception e) {
-            Logger logger = LoggerFactory.getLogger(this.getClass());
+            
             logger.debug(e.getMessage());
             try {
                 selectionKey.cancel();
@@ -139,7 +147,6 @@ public class NetworkService extends Thread {
             serverSocketChannel.close();
             this.runFlag = false;
         } catch (IOException e) {
-            Logger logger = LoggerFactory.getLogger(this.getClass());
             logger.debug(e.getMessage());
         }
     }

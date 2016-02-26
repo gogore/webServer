@@ -11,8 +11,7 @@ public class WebServerTest {
 
     @Test
     public void runWebServer() throws IOException, InterruptedException {
-        NetworkService networkService = new NetworkService();
+        NetworkService networkService = new NetworkService(1234, 100);
         networkService.run();
     }
-
 }
