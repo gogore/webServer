@@ -3,7 +3,6 @@ build/
 .settings/
 .project
 bin/
-kekeke
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
 
