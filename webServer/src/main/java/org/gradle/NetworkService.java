@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 public class NetworkService extends Thread {
     private Selector selector = null;
     private ServerSocketChannel serverSocketChannel;
+    private boolean runFlag = true;
 
     /**
      * 소켓 생성
@@ -28,7 +29,7 @@ public class NetworkService extends Thread {
         selector = Selector.open();
         serverSocketChannel.configureBlocking(false);
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
-        serverSocketChannel.socket().bind(new InetSocketAddress(8080));
+        serverSocketChannel.socket().bind(new InetSocketAddress(1234));
     }
 
     /**
@@ -36,7 +37,6 @@ public class NetworkService extends Thread {
      */
     @Override
     public void run() {
-        boolean runFlag = true;
         while (runFlag) {
             try {
                 if (selector.select(1000) != 0) {
@@ -82,15 +82,16 @@ public class NetworkService extends Thread {
     private void read(SelectionKey selectionKey) {
         boolean isEos = false;
         byte[] rawData = (byte[]) selectionKey.attachment();
-
         if (rawData == null) {
             rawData = new byte[0];
             selectionKey.attach(rawData);
         }
         SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
-        ByteBuffer buffer = ByteBuffer.allocateDirect(1024);
+        ByteBuffer buffer = ByteBuffer.allocateDirect(100);
         try {
-            isEos = (socketChannel.read(buffer) == -1);
+            // 전달 받은 내용을 버퍼에 입력한다.
+            int read = socketChannel.read(buffer);
+            isEos = (read == -1);
             if (isEos) {
                 // 여기서 문자열 생성
                 byte[] resultByteArray = (byte[]) selectionKey.attachment();
@@ -100,6 +101,7 @@ public class NetworkService extends Thread {
                 System.out.println(planStr);
                 selectionKey.cancel();
                 socketChannel.close();
+                this.close();
             } else {
                 buffer.clear();
                 byte[] bytearr = new byte[buffer.remaining()];
@@ -135,9 +137,11 @@ public class NetworkService extends Thread {
         try {
             selector.close();
             serverSocketChannel.close();
+            this.runFlag = false;
         } catch (IOException e) {
             Logger logger = LoggerFactory.getLogger(this.getClass());
             logger.debug(e.getMessage());
         }
     }
+
 }
