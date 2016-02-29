@@ -30,8 +30,8 @@ public class NetworkService extends Thread {
      */
     public NetworkService(int port, int bufferSize) throws IOException, InterruptedException {
         serverSocketChannel = ServerSocketChannel.open();
-        selector = Selector.open();
         serverSocketChannel.configureBlocking(false);
+        selector = Selector.open();
         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
         serverSocketChannel.socket().bind(new InetSocketAddress(port));
         this.bufferSize = bufferSize;
@@ -44,7 +44,7 @@ public class NetworkService extends Thread {
     public void run() {
         while (runFlag) {
             try {
-                if (selector.select(1000) != 0) {
+                if (selector.selectNow() != 0) {
                     Set<SelectionKey> selectedKeys = selector.selectedKeys();
                     Iterator<SelectionKey> iterator = selectedKeys.iterator();
                     logger.debug(Integer.toString(selectedKeys.size()));
@@ -101,11 +101,10 @@ public class NetworkService extends Thread {
             int read = socketChannel.read(buffer);
             isEos = (read < bufferSize);
             if (isEos) {
-                // 여기서 문자열 생성
                 byte[] resultByteArray = (byte[]) selectionKey.attachment();
+                String planStr = new String(resultByteArray, "UTF-8");
 
-                String planStr = new String(resultByteArray);
-
+                System.out.println(planStr);
                 socketChannel.write(ByteBuffer.wrap(resultByteArray));
                 selectionKey.cancel();
                 socketChannel.close();
@@ -122,14 +121,14 @@ public class NetworkService extends Thread {
                 selectionKey.attach(totalArr);
             }
         } catch (Exception e) {
-            
-            logger.debug(e.getMessage());
+            logger.error(e.getMessage());
             try {
                 selectionKey.cancel();
                 socketChannel.close();
             } catch (IOException e1) {
                 logger.debug(e1.getMessage());
             }
+            close();
         } finally {
             if (buffer != null) {
                 buffer.clear();
@@ -149,6 +148,14 @@ public class NetworkService extends Thread {
         } catch (IOException e) {
             logger.debug(e.getMessage());
         }
+    }
+    public void test(){
+        logger.debug("asdf");
+        logger.error("Asdf");
+    }
+    public static void main(String[] arg) throws IOException, InterruptedException {
+        NetworkService networkService = new NetworkService(1234, 1);
+        networkService.test();
     }
 
 }
