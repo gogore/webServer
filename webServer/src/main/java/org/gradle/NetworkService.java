@@ -1,7 +1,6 @@
 package org.gradle;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -10,7 +9,6 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -22,14 +20,13 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import sun.nio.cs.UnicodeEncoder;
-
 public class NetworkService extends Thread {
     private int bufferSize;
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     private Selector selector = null;
     private ServerSocketChannel serverSocketChannel;
     private boolean runFlag = true;
+    private boolean exit = false;
 
     /**
      * 소켓 생성
@@ -37,15 +34,18 @@ public class NetworkService extends Thread {
      * @param bufferSize
      *
      * @throws IOException
-     * @throws InterruptedException
      */
-    public NetworkService(int port, int bufferSize) throws IOException, InterruptedException {
-        serverSocketChannel = ServerSocketChannel.open();
-        serverSocketChannel.configureBlocking(false);
-        selector = Selector.open();
-        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
-        serverSocketChannel.socket().bind(new InetSocketAddress(port));
-        this.bufferSize = bufferSize;
+    public NetworkService(int port, int bufferSize) {
+        try {
+            serverSocketChannel = ServerSocketChannel.open();
+            serverSocketChannel.configureBlocking(false);
+            selector = Selector.open();
+            serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+            serverSocketChannel.socket().bind(new InetSocketAddress(port));
+            this.bufferSize = bufferSize;
+        } catch (IOException e) {
+            close();
+        }
     }
 
     /**
@@ -124,6 +124,7 @@ public class NetworkService extends Thread {
 
                 logger.debug(planStr);
                 write(socketChannel, analysis(resultByteArray));
+                socketChannel.close();
             }
         } catch (Exception e) {
             logger.error(e.getMessage());
@@ -138,6 +139,9 @@ public class NetworkService extends Thread {
             if (buffer != null) {
                 buffer = null;
             }
+        }
+        if (this.exit) {
+            close();
         }
     }
 
@@ -157,7 +161,6 @@ public class NetworkService extends Thread {
                 }
             } while (true);
         }
-        socketChannel.close();
     }
 
     private Map<String, Object> analysis(byte[] resultByteArray) throws IOException {
@@ -168,7 +171,8 @@ public class NetworkService extends Thread {
             String getInfo = parser.getRequestLine().replaceAll("GET\\s\\/([^\\s]+)\\sHTTP/1.1", "$1");
             String[] split = getInfo.split("\\?");
             if ("close".equals(split[0])) {
-                close();
+                this.exit = true;
+                return null;
             } else {
                 Path path = Paths.get(split[0] + ".html");
                 if (Files.exists(path)) {
