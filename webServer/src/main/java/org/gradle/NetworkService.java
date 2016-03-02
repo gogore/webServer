@@ -21,6 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class NetworkService extends Thread {
+    private static final String STATUS_404 = "404 Not Found";
+    private static final String STATUS_200 = "200 OK";
     private int bufferSize;
     private Logger logger = LoggerFactory.getLogger(this.getClass());
     private Selector selector = null;
@@ -123,8 +125,14 @@ public class NetworkService extends Thread {
                 String planStr = new String(resultByteArray, "UTF-8");
 
                 logger.debug(planStr);
-                write(socketChannel, analysis(resultByteArray));
-                socketChannel.close();
+                Map<String, String> requestMap = analysis(resultByteArray);
+                if (requestMap.get("filePath") != null) {
+                    fileWriter(socketChannel, requestMap);
+                    socketChannel.close();
+                } else {
+                    socketChannel.write(ByteBuffer.wrap("not yet".getBytes()));
+                    socketChannel.close();
+                }
             }
         } catch (Exception e) {
             logger.error(e.getMessage());
@@ -145,48 +153,103 @@ public class NetworkService extends Thread {
         }
     }
 
-    private void write(SocketChannel socketChannel, Map<String, Object> analysis) throws IOException {
-        if (analysis == null) {
-            logger.debug("아직 정의되지 않음");
-        } else {
-            Path path = (Path) analysis.get("contents");
-            BufferedReader buffer = Files.newBufferedReader(path);
-            String line = null;
-            do {
-                line = buffer.readLine();
-                if (line != null) {
-                    socketChannel.write(ByteBuffer.wrap(line.getBytes()));
-                } else {
-                    break;
-                }
-            } while (true);
-        }
-    }
-
-    private Map<String, Object> analysis(byte[] resultByteArray) throws IOException {
-        Map<String, Object> resultMap = new HashMap<String, Object>();
+    /**
+     * 리퀘스트 정보를 분석한다.
+     * 
+     * @param resultByteArray
+     * @return
+     * @throws IOException
+     */
+    private Map<String, String> analysis(byte[] resultByteArray) throws IOException {
+        Map<String, String> reqReport = new HashMap<String, String>();
         HttpRequestParser parser = new HttpRequestParser();
         parser.parseRequest(new String(resultByteArray));
         if (parser.getRequestLine().indexOf("GET") > -1) {
             String getInfo = parser.getRequestLine().replaceAll("GET\\s\\/([^\\s]+)\\sHTTP/1.1", "$1");
             String[] split = getInfo.split("\\?");
-            if ("close".equals(split[0])) {
+            String doWhat = split[0];
+            if ("close".equals(doWhat)) {
                 this.exit = true;
                 return null;
             } else {
-                Path path = Paths.get(split[0] + ".html");
-                if (Files.exists(path)) {
-                    resultMap.put("contents", path);
+                if (doWhat.indexOf(".") > -1) {
+                    Path path = Paths.get(doWhat);
+                    if (Files.exists(path)) {
+                        String contentType = getContentType(doWhat);
+                        reqReport.put("contentLength", "100");
+                        reqReport.put("contentType", contentType +"; charset=UTF-8");
+                        reqReport.put("status", STATUS_200);
+                    } else {
+                        reqReport.put("contentLength", "0");
+                        reqReport.put("contentType", "text/html; charset=UTF-8");
+                        reqReport.put("status", STATUS_404);
+                    }
+                    reqReport.put("filePath", doWhat);
                 } else {
-                    return null;
+                    reqReport.put("action", doWhat);
+                    reqReport.put("status", STATUS_200);
                 }
             }
         }
-        return resultMap;
+        return reqReport;
+    }
+
+    private String getContentType(String fileName) {
+        String contentType = "";
+        if(fileName.endsWith("html")){
+            contentType = "text/html";
+        } else if(fileName.endsWith("png")){
+            contentType = "image/png";
+        } else {
+            contentType = "application/octet-stream";
+        }
+        return contentType;
+    }
+
+    private void headWriter(SocketChannel socketChannel, Map<String, String> headerMap) throws IOException {
+        String lineSeparator = System.getProperty("line.separator");
+        streamWriter(socketChannel, "HTTP/1.1 " + headerMap.get("status") + lineSeparator);
+        streamWriter(socketChannel, "Server : higore" + lineSeparator);
+        streamWriter(socketChannel, "Content-Type : " + headerMap.get("contentType") + lineSeparator);
+        streamWriter(socketChannel, "Content-Length : " + headerMap.get("contentLenth") + lineSeparator);
+        streamWriter(socketChannel, lineSeparator);
     }
 
     /**
-     * 소켓을 닫는다.
+     * 클라이언트로 보낼 정보를 쓴다.
+     * 
+     * @param socketChannel
+     * @param headerMap
+     * @throws IOException
+     */
+    private void fileWriter(SocketChannel socketChannel, Map<String, String> headerMap) throws IOException {
+        if (STATUS_200.equals(headerMap.get("status"))) {
+            Path path = Paths.get(headerMap.get("filePath"));
+            BufferedReader buffer = Files.newBufferedReader(path);
+            String line = null;
+            headWriter(socketChannel, headerMap);
+            do {
+                line = buffer.readLine();
+                if (line != null) {
+                    streamWriter(socketChannel, line);
+                } else {
+                    break;
+                }
+            } while (true);
+        } else if(STATUS_404.equals(headerMap.get("status"))){
+            
+            
+            headWriter(socketChannel, headerMap);
+            socketChannel.write(ByteBuffer.wrap("없슈".getBytes()));
+        }
+    }
+
+    private void streamWriter(SocketChannel socketChannel, String line) throws IOException {
+        socketChannel.write(ByteBuffer.wrap(line.getBytes()));
+    }
+
+    /**
+     * 서버 소켓을 닫는다.
      */
     public void close() {
         try {
