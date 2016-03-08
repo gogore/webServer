@@ -106,6 +106,7 @@ public class NetworkService extends Thread {
             selectionKey.attach(rawData);
         }
         SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+        // TODO 버퍼 할당 시간이 오래 걸리므로 버퍼 풀을 구성해야 한다.
         ByteBuffer buffer = ByteBuffer.allocateDirect(bufferSize);
         try {
             // 전달 받은 내용을 버퍼에 입력한다.
@@ -186,6 +187,7 @@ public class NetworkService extends Thread {
                     }
                     reqReport.put("filePath", doWhat);
                 } else {
+                    // TODO rest 분석
                     reqReport.put("action", doWhat);
                     reqReport.put("status", STATUS_200);
                 }
@@ -195,6 +197,7 @@ public class NetworkService extends Thread {
     }
 
     private String getContentType(String fileName) {
+        // TODO 다양한 contents타입을 어떤 자료구조로 구성할지 고민해보자
         String contentType = "";
         if(fileName.endsWith("html")){
             contentType = "text/html";
